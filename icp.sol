@@ -73,7 +73,7 @@ contract CA {
         names[adss] = Certificate(name, email, true);
     }
 
-    function merkletree(bytes32 seed, uint numkeys)
+    function merkletree(bytes32 seed, uint numkeys) pure
     private returns(bytes32 keyzero, bytes32 root) {
         bytes32[] memory zkeys;
 
@@ -119,7 +119,7 @@ contract CA {
     }
 
     function verifytree(bytes32 key, bytes32[] chain, uint index)
-    private returns(bytes32 keyzero, bytes32 root) {
+    pure private returns(bytes32 keyzero, bytes32 root) {
 
         bytes32[] memory zkeys;
 
@@ -368,7 +368,7 @@ contract Storage_key {
         }
     }
 
-    function update_key(bytes32 private_key_, uint max_use_) owner public {
+    function update_key(bytes32 private_key_, uint max_use_) owner public{
         private_key = private_key_;
         max_use = max_use_;
         bytes32 key;
@@ -377,7 +377,7 @@ contract Storage_key {
         public_key = keccak256(abi.encodePacked(key,root));
     }
 
-    function merkletree(bytes32 seed, uint numkeys)
+    function merkletree(bytes32 seed, uint numkeys) pure
     private returns(bytes32 keyzero, bytes32 root) {
         bytes32[] memory zkeys;
 
@@ -423,7 +423,7 @@ contract Storage_key {
     }
 
     function verifytree(bytes32 key, bytes32[] chain, uint index)
-    private returns(bytes32 keyzero, bytes32 root) {
+    pure private returns(bytes32 keyzero, bytes32 root) {
 
         bytes32[] memory zkeys;
 
