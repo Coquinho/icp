@@ -11,7 +11,7 @@ contract CA {
 
     address[] cot;
 
-    constructor(uint key, uint uses) public {
+    constructor(uint key, uint uses) public payable{
         bytes32 pk = keccak256(abi.encodePacked(msg.sender, key, now));
         keys = new Storage_key(pk, uses);
     }
@@ -75,7 +75,6 @@ contract CA {
 
     function merkletree(bytes32 seed, uint numkeys) pure
     private returns(bytes32 keyzero, bytes32 root) {
-        bytes32[] memory zkeys;
 
         // found relevante keys to merkle proof
         if (numkeys % 2 == 0) {
@@ -86,61 +85,67 @@ contract CA {
             numkeys = (numkeys+1)/2;
             keyzero = seed;
         }
+        bytes32[] memory zkeys = new bytes32[](numkeys);
 
         // hash the first odd key to merkle tree
         zkeys[numkeys-1] = keccak256(abi.encodePacked(keyzero));
 
-        for (uint i = numkeys-2; i >= 0 ; i--) {
+        for (uint i = numkeys; i >= 2 ; i--) {
             // 2 hashes to jump for the next odd index
             keyzero = keccak256(abi.encodePacked(keccak256(abi.encodePacked(keyzero))));
             // hash key to a leaf of the merkle tree
-            zkeys[i] = keccak256(abi.encodePacked(keyzero));
+            zkeys[i-2] = keccak256(abi.encodePacked(keyzero));
         }
-        // keyzero and the most left leaf from merkle tree are the same
+
         keyzero = keccak256(abi.encodePacked(keyzero));
 
+        uint numoperation = 0;
         // implementing merkle tree proof
         while(numkeys > 1) {
             // number of nodes in the next tree level
-            if (numkeys % 2 == 0)
+            if (numkeys % 2 == 0) {
                 numkeys /= 2;
-            else
+                numoperation = numkeys;
+            } else {
                 numkeys = (numkeys+1)/2;
+                numoperation = numkeys -1;
+            }
 
-            for (i = 0; i < numkeys-numkeys%2; i++) {
+            for (i = 0; i < numoperation; i++) {
                 zkeys[i] = keccak256(abi.encodePacked(zkeys[2*i],zkeys[2*i+1]));
             }
-            if(numkeys%2 == 1)
-                zkeys[(numkeys+1)/2] = zkeys[numkeys];
+            if(numoperation%2 == 1)
+                zkeys[(numoperation+1)/2] = zkeys[numoperation];
 
         }
 
         root = zkeys[0];
     }
 
-    function verifytree(bytes32 key, bytes32[] chain, uint index)
-    pure private returns(bytes32 keyzero, bytes32 root) {
+    function verifytree(bytes32 key, bytes32[] chain, uint index) pure
+    public returns(bytes32 pubkey) {
 
-        bytes32[] memory zkeys;
-
+        bytes32 keyzero;
         // found relevante keys to merkle proof
         if (index % 2 == 0) {
             index /= 2;
             // get to the first odd key
-            keyzero = keccak256(abi.encodePacked(keyzero));
+            keyzero = keccak256(abi.encodePacked(key));
         } else {
             index = (index+1)/2;
             keyzero = key;
         }
 
-        // hash the first odd key to merkle tree
-        zkeys[index-1] = keccak256(abi.encodePacked(keyzero));
+        bytes32[] memory zkeys = new bytes32[](index+1);
 
-        for (uint i = index-2; i >= 0 ; i--) {
+        // hash the first odd key to merkle tree
+        zkeys[index] = keccak256(abi.encodePacked(keyzero));
+
+        for (uint i = index; i > 0 ; i--) {
             // 2 hashes to jump for the next odd index
             keyzero = keccak256(abi.encodePacked(keccak256(abi.encodePacked(keyzero))));
             // hash key to a leaf of the merkle tree
-            zkeys[i] = keccak256(abi.encodePacked(keyzero));
+            zkeys[i-1] = keccak256(abi.encodePacked(keyzero));
         }
         // keyzero and the most left leaf from merkle tree are the same
         keyzero = keccak256(abi.encodePacked(keyzero));
@@ -172,7 +177,7 @@ contract CA {
 
         }
 
-        root = zkeys[0];
+        pubkey = keccak256(abi.encodePacked(keyzero,zkeys[0]));
     }
     function gen_key(uint key, uint n_keys) has_name pay_cust
     public payable returns(bytes32 private_key, bytes32 public_key) {
@@ -286,7 +291,7 @@ contract Storage_key {
     uint uses = 0;
     uint max_use;
 
-    constructor(bytes32 private_key_, uint max_use_) public {
+    constructor(bytes32 private_key_, uint max_use_) public payable {
         private_key = private_key_;
         max_use = max_use_;
         bytes32 key;
@@ -307,7 +312,6 @@ contract Storage_key {
 
     function next_key() owner have_use public
     returns(bytes32 key, uint index, bytes32[] chain) {
-        bytes32[] memory zkeys;
 
         uses++;
         key = private_key;
@@ -324,19 +328,22 @@ contract Storage_key {
         } else
             index -= (uses+1)/2;
 
+        bytes32[] memory zkeys = new bytes32[](index+1);
 
         // hash the first odd key to merkle tree
         zkeys[index] = keccak256(abi.encodePacked(key));
 
-        for (uint i = index-1; i > 0 ; i--) {
+        for (uint i = index; i > 1 ; i--) {
             // 2 hashes to jump for the next odd index
             key = keccak256(abi.encodePacked(keccak256(abi.encodePacked(key))));
             // hash key to a leaf of the merkle tree
-            zkeys[i] = keccak256(abi.encodePacked(key));
+            zkeys[i-1] = keccak256(abi.encodePacked(key));
         }
 
         if(index%2==0)
-            key =  keccak256(abi.encodePacked(key));
+            key = keccak256(abi.encodePacked(key));
+        else
+            key = keccak256(abi.encodePacked(keccak256(abi.encodePacked(key))));
 
         uint chainindex = 0;
 
@@ -356,16 +363,17 @@ contract Storage_key {
             }
 
             // hashes leaves two by two
-            for (i = index-numoperation+chainindex-1; i < numoperation; i++) {
+            for (i = index-numoperation+chainindex; i < numoperation; i++) {
                 zkeys[i] = keccak256(abi.encodePacked(zkeys[2*i],zkeys[2*i+1]));
             }
             if(numoperation%2 == 1) {
-                zkeys[(numoperation+1)/2] = zkeys[numoperation+1];
+                zkeys[(numoperation+1)/2+index-numoperation+chainindex] = zkeys[2*numoperation];
                 chain[chainindex] = zkeys[chainindex];
                 chainindex++;
             }
 
         }
+        index = uses;
     }
 
     function update_key(bytes32 private_key_, uint max_use_) owner public{
@@ -377,9 +385,8 @@ contract Storage_key {
         public_key = keccak256(abi.encodePacked(key,root));
     }
 
-    function merkletree(bytes32 seed, uint numkeys) pure
-    private returns(bytes32 keyzero, bytes32 root) {
-        bytes32[] memory zkeys;
+    function merkletree(bytes32 seed, uint numkeys) view
+    owner private returns(bytes32 keyzero, bytes32 root) {
 
         // found relevante keys to merkle proof
         if (numkeys % 2 == 0) {
@@ -390,61 +397,67 @@ contract Storage_key {
             numkeys = (numkeys+1)/2;
             keyzero = seed;
         }
+        bytes32[] memory zkeys = new bytes32[](numkeys);
 
         // hash the first odd key to merkle tree
         zkeys[numkeys-1] = keccak256(abi.encodePacked(keyzero));
 
-        for (uint i = numkeys-2; i >= 0 ; i--) {
+        for (uint i = numkeys; i >= 2 ; i--) {
             // 2 hashes to jump for the next odd index
             keyzero = keccak256(abi.encodePacked(keccak256(abi.encodePacked(keyzero))));
             // hash key to a leaf of the merkle tree
-            zkeys[i] = keccak256(abi.encodePacked(keyzero));
+            zkeys[i-2] = keccak256(abi.encodePacked(keyzero));
         }
-        // keyzero and the most left leaf from merkle tree are the same
+
         keyzero = keccak256(abi.encodePacked(keyzero));
 
+        uint numoperation = 0;
         // implementing merkle tree proof
         while(numkeys > 1) {
             // number of nodes in the next tree level
-            if (numkeys % 2 == 0)
+            if (numkeys % 2 == 0) {
                 numkeys /= 2;
-            else
+                numoperation = numkeys;
+            } else {
                 numkeys = (numkeys+1)/2;
+                numoperation = numkeys -1;
+            }
 
-            for (i = 0; i < numkeys-numkeys%2; i++) {
+            for (i = 0; i < numoperation; i++) {
                 zkeys[i] = keccak256(abi.encodePacked(zkeys[2*i],zkeys[2*i+1]));
             }
-            if(numkeys%2 == 1)
-                zkeys[(numkeys+1)/2] = zkeys[numkeys];
+            if(numoperation%2 == 1)
+                zkeys[(numoperation+1)/2] = zkeys[numoperation];
 
         }
 
         root = zkeys[0];
     }
 
-    function verifytree(bytes32 key, bytes32[] chain, uint index)
-    pure private returns(bytes32 keyzero, bytes32 root) {
+    function verifytree(bytes32 key, bytes32[] chain, uint index) pure
+    public returns(bytes32 pubkey) {
 
-        bytes32[] memory zkeys;
-
+        bytes32 keyzero;
         // found relevante keys to merkle proof
         if (index % 2 == 0) {
             index /= 2;
             // get to the first odd key
-            keyzero = keccak256(abi.encodePacked(keyzero));
+            keyzero = keccak256(abi.encodePacked(key));
         } else {
             index = (index+1)/2;
             keyzero = key;
         }
 
-        // hash the first odd key to merkle tree
-        zkeys[index-1] = keccak256(abi.encodePacked(keyzero));
+        bytes32[] memory zkeys = new bytes32[](index+1);
 
-        for (uint i = index-2; i >= 0 ; i--) {
+        // hash the first odd key to merkle tree
+        zkeys[index] = keccak256(abi.encodePacked(keyzero));
+
+        for (uint i = index; i > 0 ; i--) {
             // 2 hashes to jump for the next odd index
             keyzero = keccak256(abi.encodePacked(keccak256(abi.encodePacked(keyzero))));
             // hash key to a leaf of the merkle tree
-            zkeys[i] = keccak256(abi.encodePacked(keyzero));
+            zkeys[i-1] = keccak256(abi.encodePacked(keyzero));
         }
         // keyzero and the most left leaf from merkle tree are the same
         keyzero = keccak256(abi.encodePacked(keyzero));
@@ -476,6 +489,7 @@ contract Storage_key {
 
         }
 
-        root = zkeys[0];
+        pubkey = keccak256(abi.encodePacked(keyzero,zkeys[0]));
     }
 }
+
